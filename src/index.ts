@@ -1,45 +1,90 @@
 import { none, Plugin, PluginCallbacks, State } from '@hookstate/core';
 import { getPath, isEmpty } from './utils';
 
-const PluginID = Symbol('BrowserStoragePersistence');
+const PluginID = Symbol('BrowserExtensionStorage');
 const SERIALIZABLE_NONE = '__NONE__';
 const STATE_UPDATE_KEY = '__state_update';
 const STATE_UPDATE_FROM_KEY = '__state_from';
+const STATE_VERSION_KEY = '__state_version';
 
-export interface BrowserStoragePersistenceOptions {
-  id: string,
-  storage: typeof browser.storage,
-  areaName: 'local' | 'sync',
-  initialState: any,
+type FnCallback<T, R> = (param: T, callback: (result: R) => void) => void;
+type FnPromise<T, R> = (param: T) => Promise<R>;
+
+function wrapPromise<T, R>(fn: FnCallback<T, R> | FnPromise<T, R>): (param: T) => Promise<R> {
+  return param => new Promise((resolve, reject) => {
+    const ret = fn(param, result => {
+      if (globalThis.chrome?.runtime?.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        resolve(result);
+      }
+    });
+
+    if (ret && ret.then) {
+      ret.then(resolve).catch(reject);
+    }
+  });
 }
 
-export function BrowserStoragePersistence({
-                                            id,
-                                            storage,
-                                            initialState,
-                                            areaName
-                                          }: BrowserStoragePersistenceOptions): () => Plugin {
+export interface BrowserExtensionStorageOptions<T extends Record<string, any>> {
+  id: string,
+  storage: typeof browser.storage | typeof chrome.storage,
+  areaName: 'local' | 'sync',
+  initialState: T,
+  persistedKeys: (keyof T)[],
+  version: number,
+  leader: boolean,
+  onError?: (err: any) => void
+}
+
+export function BrowserExtensionStorage<T>({
+                                             id,
+                                             storage,
+                                             initialState,
+                                             areaName,
+                                             persistedKeys,
+                                             version,
+                                             leader,
+                                             onError
+                                           }: BrowserExtensionStorageOptions<T>): () => Plugin {
   const storageArea = storage[areaName];
   const keys = Object.keys(initialState);
+  const stringPersistedKeys = persistedKeys as string[];
+  const nonPersistedKeys = keys.filter(key => !stringPersistedKeys.includes(key));
+  const onErrorCb = onError ? onError : console.error;
 
   return () => ({
     id: PluginID,
     init: (state: State<any>) => {
-      // retrieve previously persisted state (asynchronous)
-      // TODO handle migrations
-      state.set(storageArea.get(keys));
+      // retrieve previously persisted state (asynchronous), and cleanup keys non marked as persisted
+      wrapPromise(storageArea.get as typeof chrome.storage.local.get)(stringPersistedKeys.concat(STATE_VERSION_KEY)).then(values => {
+        if (STATE_VERSION_KEY in values) {
+          const { [STATE_VERSION_KEY]: _, ...valuesWithoutVersion } = values;
+
+          // TODO handle migrations
+          // set previous persisted data in state
+          state.set(valuesWithoutVersion);
+          // the leader is responsible for cleaning non persistent data
+          if (leader) {
+            return storageArea.remove(nonPersistedKeys as string[]);
+          }
+          return;
+        }
+        // if no previous state was persisted, persist initialState
+        return storageArea.set({ ...initialState, [STATE_VERSION_KEY]: version });
+      }).catch(onErrorCb);
 
       let batchingContext: unknown;
 
       // reapply changes to storage onto the state
       function changeListener(changes: Record<string, browser.storage.StorageChange>) {
-        // Only handle changes that include `__state_update` key
+        // only handle changes that include STATE_UPDATE_KEY
         if (changes[STATE_UPDATE_KEY]) {
-          // use a reviver to
+          // use a reviver to unserialize `none`
           const stateUpdate = JSON.parse(changes[STATE_UPDATE_KEY].newValue, function (k: any, v: any) {
             return v === SERIALIZABLE_NONE ? none : v;
           });
-          // state saved from current process
+          // if the state was saved from current instance, do not take the change into account to avoid infinite loop
           if (stateUpdate.from === id) return;
 
           if (!isEmpty(stateUpdate.merged)) {
@@ -76,30 +121,30 @@ export function BrowserStoragePersistence({
 
       return {
         onSet: p => {
-          // If there is a context with the `STATE_UPDATE_FROM_KEY` key, it means that the update comes from
+          // If there is a context with STATE_UPDATE_FROM_KEY, it means that the update comes from
           // the onChanged listener, so we do not want to persist it again.
-          if (batchingContext && (batchingContext as any)[STATE_UPDATE_FROM_KEY]) {
+          if (batchingContext && STATE_UPDATE_FROM_KEY in (batchingContext as any)) {
             return;
           }
           if (!('state' in p)) {
             // state is completely removed, that's probably an error, as we would want the default state instead here
-            console.error('State completely removed. This is not handled by BrowserStoragePersistence plugin');
+            onErrorCb(new Error('State completely removed. This is not handled by BrowserStoragePersistence plugin'));
           } else if (p.path.length > 0) {
             const value = 'value' in p ? p.value : SERIALIZABLE_NONE;
-            storageArea.set({
+            wrapPromise(storageArea.set)({
               [p.path[0]]: p.state[p.path[0]],
               [STATE_UPDATE_KEY]: JSON.stringify({
                 from: id,
                 path: p.path,
                 value: value,
-                // `none` is a Symbol, and thus not serializable
                 merged: p.merged,
+                // `none` is a Symbol, and thus not serializable
               }, function (k, v) {
                 return v === none ? SERIALIZABLE_NONE : v;
               }),
-            });
+            }).catch(onErrorCb);
           } else {
-            storageArea.set({
+            wrapPromise(storageArea.set)({
               ...p.value,
               [STATE_UPDATE_KEY]: JSON.stringify({
                 from: id,
@@ -107,7 +152,7 @@ export function BrowserStoragePersistence({
               }, function (k, v) {
                 return v === none ? SERIALIZABLE_NONE : v;
               }),
-            });
+            }).catch(onErrorCb);
           }
         },
         onDestroy: () => {
@@ -118,6 +163,7 @@ export function BrowserStoragePersistence({
         },
         onBatchFinish: () => {
           batchingContext = {};
+          // TODO actual batching
         },
       } as PluginCallbacks;
     },

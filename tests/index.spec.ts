@@ -1,10 +1,11 @@
 import { createState, none, State } from '@hookstate/core';
 import browser from 'sinon-chrome';
-import { BrowserStoragePersistence } from '../src';
+import { BrowserExtensionStorage, BrowserExtensionStorageOptions } from '../src';
 
 describe('hookstate-plugin-web-extension', () => {
   const defaultState = { a: [] as any[], b: { c: 2 }, d: 8 };
   let state: State<typeof defaultState>;
+  const onError = jest.fn();
 
   function getDefaultState(): typeof defaultState {
     return JSON.parse(JSON.stringify(defaultState))
@@ -13,17 +14,92 @@ describe('hookstate-plugin-web-extension', () => {
   beforeAll(function () {
     state = createState(getDefaultState());
 
-    state.attach(BrowserStoragePersistence({
+    state.attach(BrowserExtensionStorage({
       id: 'test-1',
       areaName: 'local',
       initialState: defaultState,
-      storage: browser.storage
+      storage: browser.storage,
+      persistedKeys: ['b', 'd'],
+      leader: true,
+      onError: onError,
+      version: 1
     }));
   });
 
   beforeEach(() => {
     state.set(getDefaultState());
     browser.storage.local.set.resetHistory();
+    browser.storage.local.remove.resetHistory();
+    onError.mockClear();
+  });
+
+  describe('init', () => {
+    let internalState: State<typeof defaultState>;
+
+    function prepare(options: Partial<BrowserExtensionStorageOptions<typeof defaultState>> = {}) {
+      internalState.attach(BrowserExtensionStorage({
+        id: 'test-1',
+        areaName: 'local',
+        initialState: defaultState,
+        storage: browser.storage,
+        persistedKeys: ['b', 'd'],
+        leader: true,
+        onError: onError,
+        version: 1,
+        ...options
+      }));
+    }
+
+    beforeEach(() => {
+      internalState = createState(getDefaultState());
+
+      browser.storage.local.get.withArgs(['b', 'd', '__state_version']).yields({
+        a: [] as any[],
+        b: { c: 3 },
+        d: 9,
+        __state_version: 1
+      });
+    });
+
+    afterEach(() => {
+      browser.storage.local.get.flush();
+    });
+
+    it('should restore previous data tagged as persistent (leader)', async function () {
+      prepare();
+      // wait for async state update
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(internalState.get()).toEqual({ a: [], b: { c: 3 }, d: 9 });
+    });
+
+    it('should restore previous data tagged as persistent (not leader)', async function () {
+      prepare({
+        leader: false,
+      });
+      // wait for async state update
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(internalState.get()).toEqual({ a: [], b: { c: 3 }, d: 9 });
+    });
+
+    it('should clear previous data if flagged as leader', async function () {
+      prepare();
+      // wait for async state update
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(browser.storage.local.remove).toHaveBeenAlwaysCalledWith(['a']);
+    });
+
+    it('should not clear previous data if not flagged as leader', async function () {
+      prepare({
+        leader: false,
+      });
+      // wait for async state update
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(browser.storage.local.remove).not.toHaveBeenCalled();
+    });
   });
 
   describe('write', () => {
@@ -156,7 +232,7 @@ describe('hookstate-plugin-web-extension', () => {
 
     describe('set path to none', () => {
       it('should update state if it comes for a different source', () => {
-        state.a.set([{y: 1}, {y: 2}]);
+        state.a.set([{ y: 1 }, { y: 2 }]);
         browser.storage.local.set.resetHistory();
         browser.storage.onChanged.dispatch({
           '__state_update': {
@@ -171,7 +247,7 @@ describe('hookstate-plugin-web-extension', () => {
 
     describe('set merge to none', () => {
       it('should update state if it comes for a different source', () => {
-        state.a.set([{y: 1}, {y: 2}]);
+        state.a.set([{ y: 1 }, { y: 2 }]);
         browser.storage.local.set.resetHistory();
         browser.storage.onChanged.dispatch({
           '__state_update': {
