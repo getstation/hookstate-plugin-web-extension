@@ -11,17 +11,26 @@ type FnCallback<T, R> = (param: T, callback: (result: R) => void) => void;
 type FnPromise<T, R> = (param: T) => Promise<R>;
 
 function wrapPromise<T, R>(fn: FnCallback<T, R> | FnPromise<T, R>): (param: T) => Promise<R> {
-  return param => new Promise((resolve, reject) => {
-    const ret = fn(param, result => {
-      if (globalThis.chrome?.runtime?.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        resolve(result);
-      }
-    });
+  if (fn.length === 1) {
+    return fn as FnPromise<T, R>;
+  }
 
-    if (ret && ret.then) {
-      ret.then(resolve).catch(reject);
+  return param => new Promise((resolve, reject) => {
+    try {
+      fn(param, result => {
+        if (globalThis.chrome?.runtime?.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(result);
+        }
+      });
+    } catch (e) {
+      // fix for webextension-polyfill
+      if (e.message.startsWith('Expected at most')) {
+        (fn as FnPromise<T, R>)(param).then(resolve).catch(reject);
+      } else {
+        throw e;
+      }
     }
   });
 }
