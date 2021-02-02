@@ -26,52 +26,59 @@ function wrapPromise<T, R>(fn: FnCallback<T, R> | FnPromise<T, R>): (param: T) =
   });
 }
 
-export interface BrowserExtensionStorageOptions<T extends Record<string, any>> {
+interface BrowserExtensionLeaderStorageOptions<T extends Record<string, any>> {
+  leader: true,
+  version: number,
+  persistedKeys: (keyof T)[],
+}
+
+interface BrowserExtensionNonLeaderStorageOptions {
+  leader: false,
+}
+
+export type BrowserExtensionStorageOptions<T extends Record<string, any>> = {
   id: string,
   storage: typeof browser.storage | typeof chrome.storage,
   areaName: 'local' | 'sync',
   initialState: T,
-  persistedKeys: (keyof T)[],
-  version: number,
-  leader: boolean,
   onError?: (err: any) => void
-}
+} & (BrowserExtensionLeaderStorageOptions<T> | BrowserExtensionNonLeaderStorageOptions);
 
-export function BrowserExtensionStorage<T>({
-                                             id,
-                                             storage,
-                                             initialState,
-                                             areaName,
-                                             persistedKeys,
-                                             version,
-                                             leader,
-                                             onError
-                                           }: BrowserExtensionStorageOptions<T>): () => Plugin {
+export function BrowserExtensionStorage<T>(options: BrowserExtensionStorageOptions<T>): () => Plugin {
+  const {
+    id,
+    storage,
+    initialState,
+    areaName,
+    onError
+  } = options;
   const storageArea = storage[areaName];
   const keys = Object.keys(initialState);
-  const stringPersistedKeys = persistedKeys as string[];
-  const nonPersistedKeys = keys.filter(key => !stringPersistedKeys.includes(key));
+  const keysToLoad = options.leader ? options.persistedKeys as string[] : keys;
+  const keysToClear = options.leader ? keys.filter(key => !keysToLoad.includes(key)) : [];
   const onErrorCb = onError ? onError : console.error;
 
   return () => ({
     id: PluginID,
     init: (state: State<any>) => {
       // retrieve previously persisted state (asynchronous), and cleanup keys non marked as persisted
-      wrapPromise(storageArea.get as typeof chrome.storage.local.get)(stringPersistedKeys.concat(STATE_VERSION_KEY)).then(values => {
+      wrapPromise(storageArea.get as typeof chrome.storage.local.get)(keysToLoad.concat(STATE_VERSION_KEY)).then(values => {
         if (STATE_VERSION_KEY in values) {
           const { [STATE_VERSION_KEY]: _, ...valuesWithoutVersion } = values;
 
           // TODO handle migrations
           // set previous persisted data in state
-          state.set(valuesWithoutVersion);
+          state.merge(valuesWithoutVersion);
           // the leader is responsible for cleaning non persistent data
-          if (leader) {
-            return storageArea.remove(nonPersistedKeys as string[]);
+          if (keysToClear.length > 0) {
+            return storageArea.remove(keysToClear);
           }
           return;
         }
-        // if no previous state was persisted, persist initialState
-        return storageArea.set({ ...initialState, [STATE_VERSION_KEY]: version });
+        if (options.leader) {
+          // if no previous state was persisted, persist initialState
+          return storageArea.set({ ...initialState, [STATE_VERSION_KEY]: options.version });
+        }
       }).catch(onErrorCb);
 
       let batchingContext: unknown;

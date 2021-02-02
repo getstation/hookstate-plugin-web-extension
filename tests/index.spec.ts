@@ -54,7 +54,13 @@ describe('hookstate-plugin-web-extension', () => {
       internalState = createState(getDefaultState());
 
       browser.storage.local.get.withArgs(['b', 'd', '__state_version']).yields({
-        a: [] as any[],
+        b: { c: 3 },
+        d: 9,
+        __state_version: 1
+      });
+
+      browser.storage.local.get.withArgs(['a', 'b', 'd', '__state_version']).yields({
+        a: ['a'] as any[],
         b: { c: 3 },
         d: 9,
         __state_version: 1
@@ -73,14 +79,14 @@ describe('hookstate-plugin-web-extension', () => {
       expect(internalState.get()).toEqual({ a: [], b: { c: 3 }, d: 9 });
     });
 
-    it('should restore previous data tagged as persistent (not leader)', async function () {
+    it('should restore previous data (not leader)', async function () {
       prepare({
         leader: false,
       });
       // wait for async state update
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      expect(internalState.get()).toEqual({ a: [], b: { c: 3 }, d: 9 });
+      expect(internalState.get()).toEqual({ a: ['a'], b: { c: 3 }, d: 9 });
     });
 
     it('should clear previous data if flagged as leader', async function () {
