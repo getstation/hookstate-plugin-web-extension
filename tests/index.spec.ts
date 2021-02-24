@@ -27,7 +27,7 @@ describe('hookstate-plugin-web-extension', () => {
   });
 
   beforeEach(() => {
-    state.set(getDefaultState());
+    state.produce(() => getDefaultState());
     browser.storage.local.set.resetHistory();
     browser.storage.local.remove.resetHistory();
     onError.mockClear();
@@ -111,90 +111,54 @@ describe('hookstate-plugin-web-extension', () => {
   describe('write', () => {
 
     describe('deep', () => {
-      it('merge', () => {
-        state.b.merge({ c: 4 });
+      it('produce - set', () => {
+        state.b.produce(() => ({ c: 4 }));
         expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
           b: { c: 4 },
-          __state_update: '{"from":"test-1","path":["b"],"value":{"c":4},"merged":{"c":4}}'
+          __state_update: '{"from":"test-1","path":["b"],"patches":[{"op":"replace","path":[],"value":{"c":4}}]}'
         });
       });
 
-      it('deep-merge', () => {
-        state.b.c.merge(5);
+      it('produce - update', () => {
+        state.b.produce(b => {
+          b.c = 5
+        });
         expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
           b: { c: 5 },
-          __state_update: '{"from":"test-1","path":["b","c"],"value":5}'
+          __state_update: '{"from":"test-1","path":["b"],"patches":[{"op":"replace","path":["c"],"value":5}]}'
         });
       });
 
-      it('set', () => {
-        state.b.set({ c: 4 });
-        expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
-          b: { c: 4 },
-          __state_update: '{"from":"test-1","path":["b"],"value":{"c":4}}'
-        });
-      });
-
-      it('deep-set', () => {
-        state.b.c.set(5);
+      it('produce - deep update', () => {
+        state.b.c.produce(() => 5);
         expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
           b: { c: 5 },
-          __state_update: '{"from":"test-1","path":["b","c"],"value":5}'
-        });
-      });
-
-      it('set none', () => {
-        state.b.set({ c: none });
-        expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
-          b: { c: none },
-          __state_update: '{"from":"test-1","path":["b"],"value":{"c":"__NONE__"}}'
-        });
-      });
-
-      it('deep-set none', () => {
-        state.b.c.set(none);
-        expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
-          b: {},
-          __state_update: '{"from":"test-1","path":["b","c"],"value":"__NONE__"}'
-        });
-      });
-
-      it('merge none', () => {
-        state.b.merge({ c: none });
-        expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
-          b: {},
-          __state_update: '{"from":"test-1","path":["b"],"value":{},"merged":{"c":"__NONE__"}}'
-        });
-      });
-
-      it('deep-merge none', () => {
-        state.b.c.merge(none);
-        expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
-          b: {},
-          __state_update: '{"from":"test-1","path":["b","c"],"value":"__NONE__"}'
+          __state_update: '{"from":"test-1","path":["b","c"],"patches":[{"op":"replace","path":[],"value":5}]}'
         });
       });
     });
 
     describe('root', () => {
-      it('merge', () => {
-        state.merge({ d: 9 });
+      it('produce - merge', () => {
+        state.produce(r => {
+          r.d = 9;
+        });
         expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
           a: [],
           b: { c: 2 },
           d: 9,
-          __state_update: '{"from":"test-1","path":[]}'
+          __state_update: '{"from":"test-1","path":[],"patches":[{"op":"replace","path":["d"],"value":9}]}'
         });
       });
 
 
-      it('set', () => {
-        state.set({ a: ['a1'] as any[], b: { c: 3 }, d: 2 });
+      it('produce - set', () => {
+        state.produce(() => ({ a: ['a1'] as any[], b: { c: 3 }, d: 2 }));
         expect(browser.storage.local.set).toHaveBeenCalledOnceWith({
           a: ['a1'],
           b: { c: 3 },
           d: 2,
-          __state_update: '{"from":"test-1","path":[]}'
+          __state_update: '{"from":"test-1","path":[],"patches":[{"op":"replace","path":[],"value":{"a":["a1"],"b":{"c":3},"d":2}}]}'
         });
       });
     });
@@ -233,36 +197,6 @@ describe('hookstate-plugin-web-extension', () => {
         });
         expect(browser.storage.local.set).not.toHaveBeenCalled();
         expect(state.b.c.get()).toEqual(4);
-      });
-    });
-
-    describe('set path to none', () => {
-      it('should update state if it comes for a different source', () => {
-        state.a.set([{ y: 1 }, { y: 2 }]);
-        browser.storage.local.set.resetHistory();
-        browser.storage.onChanged.dispatch({
-          '__state_update': {
-            'newValue': '{"from":"test-2","path":["a",0],"value":"__NONE__"}',
-          }, 'a': { 'newValue': [{ 'y': 2 }] }
-        });
-        expect(browser.storage.local.set).not.toHaveBeenCalled();
-        expect(state.a.get()).toHaveLength(1);
-        expect((state.a[0] as any).y.get()).toEqual(2);
-      });
-    });
-
-    describe('set merge to none', () => {
-      it('should update state if it comes for a different source', () => {
-        state.a.set([{ y: 1 }, { y: 2 }]);
-        browser.storage.local.set.resetHistory();
-        browser.storage.onChanged.dispatch({
-          '__state_update': {
-            'newValue': '{"from":"test-2","path":["a"],"value":[{"y":2}],"merged":{"0":"__NONE__"}}',
-          }, 'a': { 'newValue': [{ 'y': 2 }] }
-        });
-        expect(browser.storage.local.set).not.toHaveBeenCalled();
-        expect(state.a.get()).toHaveLength(1);
-        expect((state.a[0] as any).y.get()).toEqual(2);
       });
     });
 

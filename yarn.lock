@@ -294,10 +294,12 @@
     minimatch "^3.0.4"
     strip-json-comments "^3.1.1"
 
-"@hookstate/core@^3.0.4":
-  version "3.0.4"
-  resolved "https://registry.yarnpkg.com/@hookstate/core/-/core-3.0.4.tgz#1d53a365dfd0512ba0df73469ca38db4d5704d9d"
-  integrity sha512-RIQcqeZdjqAeaF2bEiLkv+tt3xWQNr97NYWHwpzpFmmiXx8ayiESM49jyAMruYFvZKmTLT1ebMcKg6nvYbepUg==
+"@hookstate/core@npm:@getstation/hookstate-core@3":
+  version "3.0.6"
+  resolved "https://registry.yarnpkg.com/@getstation/hookstate-core/-/hookstate-core-3.0.6.tgz#237e7b6fd504ecc5c4ed29885fe23923e24d4bae"
+  integrity sha512-3CKZz8oi4c5lC0t/bnMeAL8wVb43hYY3fqqzwk6uvSX2dk4Eq0kxK8NdIJaBVuvxDT+onfl6p8rfAauEFrOqGQ==
+  dependencies:
+    immer "^8.0.1"
 
 "@istanbuljs/load-nyc-config@^1.0.0":
   version "1.1.0"
@@ -2041,6 +2043,11 @@ ignore@^5.1.4:
   version "5.1.8"
   resolved "https://registry.yarnpkg.com/ignore/-/ignore-5.1.8.tgz#f150a8b50a34289b33e22f5889abd4d8016f0e57"
   integrity sha512-BMpfD7PpiETpBl/A6S498BaIJ6Y/ABT93ETbby2fP00v4EbvPBXWEoaR1UBPKs3iR53pJY7EtZk5KACI57i1Uw==
+
+immer@^8.0.1:
+  version "8.0.1"
+  resolved "https://registry.yarnpkg.com/immer/-/immer-8.0.1.tgz#9c73db683e2b3975c424fb0572af5889877ae656"
+  integrity sha512-aqXhGP7//Gui2+UrEtvxZxSquQVXTpZ7KDxfCcKAF3Vysvw0CViVaW9RZ1j1xlIYqaaaipBoqdqeibkc18PNvA==
 
 import-fresh@^3.0.0, import-fresh@^3.2.1:
   version "3.3.0"

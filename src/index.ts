@@ -77,7 +77,15 @@ export function BrowserExtensionStorage<T>(options: BrowserExtensionStorageOptio
 
           // TODO handle migrations
           // set previous persisted data in state
-          state.merge(valuesWithoutVersion);
+          state.batch(
+            s => {
+              s.produce(draft => {
+                Object.assign(draft, valuesWithoutVersion);
+              });
+            },
+            { [STATE_UPDATE_FROM_KEY]: id },
+          );
+
           // the leader is responsible for cleaning non persistent data
           if (keysToClear.length > 0) {
             return storageArea.remove(keysToClear);
@@ -103,10 +111,10 @@ export function BrowserExtensionStorage<T>(options: BrowserExtensionStorageOptio
           // if the state was saved from current instance, do not take the change into account to avoid infinite loop
           if (stateUpdate.from === id) return;
 
-          if (!isEmpty(stateUpdate.merged)) {
+          if (!isEmpty(stateUpdate.patches)) {
             state.batch(
               s => {
-                getPath(s, stateUpdate.path).merge(stateUpdate.merged);
+                getPath(s, stateUpdate.path).applyPatches(stateUpdate.patches);
               },
               { [STATE_UPDATE_FROM_KEY]: stateUpdate.from },
             );
@@ -115,7 +123,7 @@ export function BrowserExtensionStorage<T>(options: BrowserExtensionStorageOptio
               s => {
                 for (const [key, val] of Object.entries(changes)) {
                   if (!keys.includes(key)) continue;
-                  s[key].set(val.newValue);
+                  s[key].produce(() => val.newValue, true);
                 }
               },
               { [STATE_UPDATE_FROM_KEY]: stateUpdate.from },
@@ -123,7 +131,7 @@ export function BrowserExtensionStorage<T>(options: BrowserExtensionStorageOptio
           } else if (stateUpdate.path.length > 0) {
             state.batch(
               s => {
-                getPath(s, stateUpdate.path).set(stateUpdate.value);
+                getPath(s, stateUpdate.path).produce(() => stateUpdate.value, true);
               },
               { [STATE_UPDATE_FROM_KEY]: stateUpdate.from },
             );
@@ -146,14 +154,12 @@ export function BrowserExtensionStorage<T>(options: BrowserExtensionStorageOptio
             // state is completely removed, that's probably an error, as we would want the default state instead here
             onErrorCb(new Error('State completely removed. This is not handled by BrowserStoragePersistence plugin'));
           } else if (p.path.length > 0) {
-            const value = 'value' in p ? p.value : SERIALIZABLE_NONE;
             wrapPromise(storageArea.set)({
               [p.path[0]]: p.state[p.path[0]],
               [STATE_UPDATE_KEY]: JSON.stringify({
                 from: id,
                 path: p.path,
-                value: value,
-                merged: p.merged,
+                patches: p.patches,
                 // `none` is a Symbol, and thus not serializable
               }, function (k, v) {
                 return v === none ? SERIALIZABLE_NONE : v;
@@ -165,6 +171,7 @@ export function BrowserExtensionStorage<T>(options: BrowserExtensionStorageOptio
               [STATE_UPDATE_KEY]: JSON.stringify({
                 from: id,
                 path: [],
+                patches: p.patches,
               }, function (k, v) {
                 return v === none ? SERIALIZABLE_NONE : v;
               }),

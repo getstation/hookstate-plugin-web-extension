@@ -1,6 +1,6 @@
 {
   "name": "hookstate-plugin-web-extension",
-  "version": "1.0.0",
+  "version": "2.0.0-rc.1",
   "description": "Sync and persist state between background page and content_script using browser.storage",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -20,7 +20,7 @@
   "author": "Joël Charles <joel@getstation.com>",
   "license": "MIT",
   "devDependencies": {
-    "@hookstate/core": "^3.0.4",
+    "@hookstate/core": "npm:@getstation/hookstate-core@3",
     "@types/chrome": "^0.0.129",
     "@types/firefox-webext-browser": "^82.0.0",
     "@types/jest": "^26.0.20",
@@ -40,7 +40,9 @@
     "typescript": "^4.1.3"
   },
   "peerDependencies": {
-    "@hookstate/core": "^3.0.0"
+    "@hookstate/core": "3"
   },
-  "dependencies": {}
+  "dependencies": {
+    "immer": "^8.0.1"
+  }
 }
